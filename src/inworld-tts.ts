@@ -143,7 +143,7 @@ export class InworldTTS extends tts.TTS {
     };
   }
 
-  async close(): Promise<void> {
+  override async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
     
@@ -161,8 +161,12 @@ class InworldChunkedStream extends tts.ChunkedStream {
   private ttsInstance: InworldTTS;
 
   constructor(ttsInstance: InworldTTS, text: string) {
-    super(ttsInstance, text);
+    super(text, ttsInstance);
     this.ttsInstance = ttsInstance;
+  }
+
+  get label(): string {
+    return 'inworld.ChunkedStream';
   }
 
   protected async run(): Promise<void> {
@@ -226,7 +230,12 @@ class InworldChunkedStream extends tts.ChunkedStream {
 
             if (data.result?.audioContent) {
               const audioBytes = Buffer.from(data.result.audioContent, 'base64');
-              for (const frame of bstream.write(audioBytes)) {
+              // Convert Buffer to ArrayBuffer
+              const arrayBuffer = audioBytes.buffer.slice(
+                audioBytes.byteOffset,
+                audioBytes.byteOffset + audioBytes.byteLength
+              );
+              for (const frame of bstream.write(arrayBuffer)) {
                 this.queue.put({
                   requestId: this.inputText.slice(0, 20),
                   segmentId: 'default',
@@ -255,7 +264,8 @@ class InworldChunkedStream extends tts.ChunkedStream {
         });
       }
 
-      this.queue.put(tts.SynthesizeStream.END_OF_STREAM);
+      // Signal end of stream - close the queue
+      this.queue.close();
     } catch (error) {
       console.error('Inworld TTS synthesis error:', error);
       throw error;
@@ -276,6 +286,10 @@ export class InworldSynthesizeStream extends tts.SynthesizeStream {
     super(ttsInstance);
     this.ttsInstance = ttsInstance;
     this.contextId = `ctx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  get label(): string {
+    return 'inworld.SynthesizeStream';
   }
 
   protected async run(): Promise<void> {
@@ -346,7 +360,8 @@ export class InworldSynthesizeStream extends tts.SynthesizeStream {
                 final: true,
               });
             }
-            this.queue.put(tts.SynthesizeStream.END_OF_STREAM);
+            // Signal end of stream - close the queue
+            this.queue.close();
             resolve();
             return;
           }
@@ -358,7 +373,12 @@ export class InworldSynthesizeStream extends tts.SynthesizeStream {
             }
 
             const audioBytes = Buffer.from(result.audioChunk.audioContent, 'base64');
-            for (const frame of bstream.write(audioBytes)) {
+            // Convert Buffer to ArrayBuffer
+            const arrayBuffer = audioBytes.buffer.slice(
+              audioBytes.byteOffset,
+              audioBytes.byteOffset + audioBytes.byteLength
+            );
+            for (const frame of bstream.write(arrayBuffer)) {
               this.queue.put({
                 requestId: this.contextId,
                 segmentId: this.contextId,
@@ -420,7 +440,7 @@ export class InworldSynthesizeStream extends tts.SynthesizeStream {
     }
   }
 
-  async close(): Promise<void> {
+  override async close(): Promise<void> {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -428,4 +448,3 @@ export class InworldSynthesizeStream extends tts.SynthesizeStream {
     await super.close();
   }
 }
-
