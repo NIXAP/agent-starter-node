@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base  # Use base stage for dev (skip production optimizations)
+    container_name: oly-agent-dev
+    restart: unless-stopped
+    environment:
+      - LIVEKIT_URL=${LIVEKIT_URL}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NODE_ENV=development
+    env_file:
+      - .env.local
+    volumes:
+      # Mount source for development
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+    ports:
+      - "8081:8081"
+    command: ["pnpm", "dev"]
+

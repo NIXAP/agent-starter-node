@@ -4,17 +4,23 @@ import {
   ServerOptions,
   cli,
   defineAgent,
-  inference,
   metrics,
   voice,
 } from '@livekit/agents';
 import * as livekit from '@livekit/agents-plugin-livekit';
 import * as silero from '@livekit/agents-plugin-silero';
-import { BackgroundVoiceCancellation } from '@livekit/noise-cancellation-node';
+import * as openai from '@livekit/agents-plugin-openai';
+
+import { InworldTTS } from './inworld-tts.js';
+
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
-dotenv.config({ path: '.env.local' });
+// Use absolute path for .env.local so child processes can find it
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: resolve(__dirname, '..', '.env.local') }); 
 
 class Assistant extends voice.Agent {
   constructor() {
@@ -57,22 +63,26 @@ export default defineAgent({
     const session = new voice.AgentSession({
       // Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
       // See all available models at https://docs.livekit.io/agents/models/stt/
-      stt: new inference.STT({
-        model: 'assemblyai/universal-streaming',
-        language: 'en',
+      stt: new openai.STT({
+        model: "gpt-4o-transcribe",
       }),
 
       // A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
       // See all providers at https://docs.livekit.io/agents/models/llm/
-      llm: new inference.LLM({
-        model: 'openai/gpt-4.1-mini',
+      llm: new openai.LLM({
+        model: "gpt-4o",
       }),
 
       // Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-      // See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-      tts: new inference.TTS({
-        model: 'cartesia/sonic-3',
-        voice: '9626c31c-bec5-4cca-baa8-f8ba9e84c8bc',
+      // Using Inworld TTS directly with your own API key
+      // Available voices: Ashley, Diego, Edward, Olivia, and more at https://docs.inworld.ai/docs/tts/tts-playground
+      // Pricing: $5/1M chars (inworld-tts-1) or $10/1M chars (inworld-tts-1-max)
+      tts: new InworldTTS({
+        // apiKey: process.env.INWORLD_API_KEY, // Set in .env.local
+        voice: "Alex",  // Warm, natural American female voice
+        model: "inworld-tts-1",  // or "inworld-tts-1" for cheaper option
+        temperature: 1.0,
+        speakingRate: 1.0,
       }),
 
       // VAD and turn detection are used to determine when the user is speaking and when the agent should respond
@@ -110,21 +120,18 @@ export default defineAgent({
 
     ctx.addShutdownCallback(logUsage);
 
+    // Join the room and connect to the user
+    await ctx.connect();
+    
     // Start the session, which initializes the voice pipeline and warms up the models
     await session.start({
       agent: new Assistant(),
       room: ctx.room,
-      inputOptions: {
-        // LiveKit Cloud enhanced noise cancellation
-        // - If self-hosting, omit this parameter
-        // - For telephony applications, use `BackgroundVoiceCancellationTelephony` for best results
-        noiseCancellation: BackgroundVoiceCancellation(),
-      },
     });
-
-    // Join the room and connect to the user
-    await ctx.connect();
   },
 });
 
-cli.runApp(new ServerOptions({ agent: fileURLToPath(import.meta.url) }));
+cli.runApp(new ServerOptions({ 
+  agent: fileURLToPath(import.meta.url),
+  agentName: 'oly-agent',
+}));

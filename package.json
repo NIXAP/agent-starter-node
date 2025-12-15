@@ -25,6 +25,7 @@
     "@eslint/js": "^9.38.0",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/node": "^22.18.11",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.38.0",
     "globals": "^16.4.0",
     "jiti": "^2.6.1",
@@ -35,9 +36,11 @@
   "dependencies": {
     "@livekit/agents": "^1.0.21",
     "@livekit/agents-plugin-livekit": "^1.0.21",
+    "@livekit/agents-plugin-openai": "~1.0.27",
     "@livekit/agents-plugin-silero": "^1.0.21",
     "@livekit/noise-cancellation-node": "^0.1.9",
     "dotenv": "^17.2.3",
+    "ws": "^8.18.3",
     "zod": "^3.25.76"
   }
 }
