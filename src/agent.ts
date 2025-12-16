@@ -16,65 +16,56 @@ import { InworldTTS } from './inworld-tts.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { buildInstructionsWithKnowledge, getAgentConfig } from './config/index.js';
 
 // Use absolute path for .env.local so child processes can find it
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: resolve(__dirname, '..', '.env.local') }); 
 
-// Load agent configurations from file
-const configPath = resolve(__dirname, '..', 'src', 'config.json');
+// Always use 'oly-agent' as the LiveKit worker name (single worker for all agent types)
+const LIVEKIT_AGENT_NAME = 'oly-agent';
 
-interface AgentConfig {
-  agentName: string;
-  instructions: string;
-  greeting: string;
-  voice: string;
-  model: string;
-  ttsModel: string;
-  temperature: number;
-  speakingRate: number;
-}
-
-interface Config {
-  agents: Record<string, AgentConfig>;
-}
-
-function loadConfig(): Config {
-  return JSON.parse(readFileSync(configPath, 'utf-8'));
-}
-
-function getAgentConfig(config: Config, agentType: string): AgentConfig {
-  const agentConfig = config.agents[agentType] ?? config.agents.default;
-  if (!agentConfig) {
-    throw new Error(`Agent type '${agentType}' not found and no default agent configured`);
-  }
-  return agentConfig;
-}
-
-// Get agent type from AGENT_TYPE env var (set per container/process)
-const AGENT_TYPE = process.env.AGENT_TYPE || 'default';
-const config = loadConfig();
-const agentConfig = getAgentConfig(config, AGENT_TYPE);
-
-console.log(`[Config] Loading agent type: ${AGENT_TYPE}`);
-console.log(`[Config] Agent name: ${agentConfig.agentName}`);
-console.log(`[Config] Voice: ${agentConfig.voice}, Model: ${agentConfig.model}`);
-
-// Create the Assistant class with config-based instructions
-class ConfiguredAssistant extends voice.Agent {
-  constructor() {
-    super({ instructions: agentConfig.instructions });
-  }
-}
+console.log(`[Agent] Starting worker as: ${LIVEKIT_AGENT_NAME}`);
+console.log(`[Agent] Will load config dynamically from room metadata (agentType)`);
 
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
     proc.userData.vad = await silero.VAD.load();
   },
   entry: async (ctx: JobContext) => {
-    console.log(`[Agent] Starting session for: ${agentConfig.agentName}`);
+    // Join the room first to access metadata
+    await ctx.connect();
+
+    // Read agentType from room metadata (set by frontend in token)
+    let agentType = 'default';
+    try {
+      const roomMetadata = ctx.room.metadata;
+      if (roomMetadata) {
+        const parsed = JSON.parse(roomMetadata) as { agentType?: string };
+        if (parsed.agentType) {
+          agentType = parsed.agentType;
+        }
+      }
+    } catch (err) {
+      console.warn(`[Agent] Failed to parse room metadata, using default agentType:`, err);
+    }
+
+    console.log(`[Agent] Loading config for agentType: ${agentType}`);
+
+    // Load config dynamically from MySQL based on agentType
+    const agentConfig = await getAgentConfig(agentType);
+    const instructionsWithKnowledge = await buildInstructionsWithKnowledge(agentConfig);
+
+    console.log(`[Agent] Agent name: ${agentConfig.agentName}`);
+    console.log(`[Agent] Voice: ${agentConfig.voice}, Model: ${agentConfig.model}`);
+
+    // Create the Assistant class with config-based instructions
+    class ConfiguredAssistant extends voice.Agent {
+      constructor() {
+        super({ instructions: instructionsWithKnowledge });
+      }
+    }
 
     // Set up a voice AI pipeline using config values
     const session = new voice.AgentSession({
@@ -118,9 +109,6 @@ export default defineAgent({
     };
 
     ctx.addShutdownCallback(logUsage);
-
-    // Join the room and connect to the user
-    await ctx.connect();
     
     // Start the session
     await session.start({
@@ -133,8 +121,8 @@ export default defineAgent({
   },
 });
 
-// Start agent with the configured agent name
+// Start agent with the fixed LiveKit agent name (based on AGENT_TYPE, not DB)
 cli.runApp(new ServerOptions({ 
   agent: fileURLToPath(import.meta.url),
-  agentName: agentConfig.agentName,
+  agentName: LIVEKIT_AGENT_NAME,
 }));

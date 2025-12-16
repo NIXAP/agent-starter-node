@@ -17,12 +17,55 @@ x-agent-common: &agent-common
         memory: 512M
 
 services:
+  mariadb:
+    image: mariadb:11
+    container_name: oly-mariadb
+    restart: unless-stopped
+    environment:
+      - MARIADB_DATABASE=${DB_NAME:-oly}
+      - MARIADB_USER=${DB_USER:-oly}
+      - MARIADB_PASSWORD=${DB_PASSWORD:-oly}
+      - MARIADB_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-root}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./docker/mariadb/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+
+  admin:
+    <<: *agent-common
+    container_name: oly-admin
+    environment:
+      - NODE_ENV=production
+      - CONFIG_SOURCE=mysql
+      - ADMIN_PORT=8090
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-oly}
+      - DB_USER=${DB_USER:-oly}
+      - DB_PASSWORD=${DB_PASSWORD:-oly}
+    depends_on:
+      - mariadb
+    ports:
+      - "8090:8090"
+    command: ["pnpm", "admin:start"]
+
   # Default general assistant
   agent-default:
     <<: *agent-common
     container_name: oly-agent
     environment:
       - AGENT_TYPE=default
+      - CONFIG_SOURCE=mysql
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-oly}
+      - DB_USER=${DB_USER:-oly}
+      - DB_PASSWORD=${DB_PASSWORD:-oly}
+    depends_on:
+      - mariadb
     ports:
       - "8081:8081"
     healthcheck:
@@ -38,6 +81,14 @@ services:
     container_name: restaurant-assistant
     environment:
       - AGENT_TYPE=restaurant
+      - CONFIG_SOURCE=mysql
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-oly}
+      - DB_USER=${DB_USER:-oly}
+      - DB_PASSWORD=${DB_PASSWORD:-oly}
+    depends_on:
+      - mariadb
     ports:
       - "8082:8081"
     healthcheck:
@@ -53,6 +104,14 @@ services:
     container_name: logistics-agent
     environment:
       - AGENT_TYPE=logistics
+      - CONFIG_SOURCE=mysql
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-oly}
+      - DB_USER=${DB_USER:-oly}
+      - DB_PASSWORD=${DB_PASSWORD:-oly}
+    depends_on:
+      - mariadb
     ports:
       - "8083:8081"
     healthcheck:
@@ -61,3 +120,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+# Frontend web UI
+  frontend:
+    build:
+      context: ../oly-frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://livekit.axelwise.com}
+        - NEXT_PUBLIC_ADMIN_API_URL=${NEXT_PUBLIC_ADMIN_API_URL:-http://localhost:8090}
+        - BUILD_MODE=standalone
+    container_name: oly-frontend
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_LIVEKIT_URL=${NEXT_PUBLIC_LIVEKIT_URL:-wss://livekit.axelwise.com}
+      - NEXT_PUBLIC_ADMIN_API_URL=${NEXT_PUBLIC_ADMIN_API_URL:-http://localhost:8090}
+      - ADMIN_API_URL=http://admin:8090
+    depends_on:
+      - admin
+    ports:
+      - "3000:3000"
+
+volumes:
+  mariadb_data:

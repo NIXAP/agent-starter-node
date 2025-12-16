@@ -92,6 +92,69 @@ In production, use the `start` command:
 pnpm run start
 ```
 
+## Admin Panel & Database Configuration
+
+The project includes an admin panel for managing agent configurations via a web UI, backed by MariaDB.
+
+### Environment Variables
+
+Add these to your `.env.local` for database and admin panel configuration:
+
+```bash
+# Database (MariaDB)
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=oly
+DB_USER=oly
+DB_PASSWORD=oly
+
+# Admin Panel
+ADMIN_PORT=8090
+ADMIN_USER=admin
+ADMIN_PASSWORD=admin
+
+# Config source: 'file' (default) or 'mysql'
+CONFIG_SOURCE=file
+```
+
+### Running with Docker Compose
+
+Start all services including MariaDB and the admin panel:
+
+```bash
+docker-compose up -d
+```
+
+This will start:
+- **MariaDB** on port 3306
+- **Admin Panel** on port 8090 (http://localhost:8090)
+- **Agent containers** on ports 8081-8083
+
+### Importing existing config to database
+
+To migrate your `src/config.json` agents into MariaDB:
+
+```bash
+pnpm db:seed
+```
+
+### Running the admin panel locally (development)
+
+```bash
+pnpm admin
+```
+
+Then open http://localhost:8090 in your browser.
+
+### Knowledge Base
+
+Each agent can have a **Knowledge** section where you can add:
+- **Website imports** - URLs to fetch and use as context
+- **File uploads** - Documents to reference
+- **Pages** - Custom text content
+
+The knowledge is automatically appended to the agent's instructions when relevant.
+
 ## Frontend & Telephony
 
 Get started quickly with our pre-built frontend starter apps, or add telephony support:
